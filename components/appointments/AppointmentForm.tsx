@@ -37,6 +37,8 @@ export function AppointmentForm({
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [duration, setDuration] = useState(60)
+  const [conflictError, setConflictError] = useState('')
 
   const handleStaffChange = (value: string | null) => {
     if (value) setStaffId(value)
@@ -50,6 +52,22 @@ export function AppointmentForm({
     const service = services.find(s => s.id === serviceId)
     if (service) setPrice(service.price.toString())
   }, [serviceId, services])
+
+  async function checkConflict(sId: string, stId: string, d: string, t: string) {
+    if (!sId || !stId || !d || !t) return
+    const res = await fetch('/api/appointments/check-conflict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staff_id: stId, date: d, time: t, service_id: sId }),
+    })
+    const data = await res.json()
+    setDuration(data.duration ?? 60)
+    setConflictError(data.conflict ? data.message : '')
+  }
+
+  useEffect(() => {
+    checkConflict(serviceId, staffId || currentUserId, date, time)
+  }, [serviceId, staffId, date, time])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -165,6 +183,18 @@ export function AppointmentForm({
         <div className="space-y-2">
           <Label>Saat</Label>
           <Input type="time" value={time} onChange={e => setTime(e.target.value)} required />
+          {duration > 0 && time && (
+            <p className="text-xs text-gray-400">
+              Bitiş: {(() => {
+                const [h, m] = time.split(':').map(Number)
+                const end = h * 60 + m + duration
+                return `${Math.floor(end/60).toString().padStart(2,'0')}:${(end%60).toString().padStart(2,'0')}`
+              })()}
+            </p>
+          )}
+          {conflictError && (
+            <p className="text-red-500 text-sm font-medium">⚠️ {conflictError}</p>
+          )}
         </div>
       </div>
       <div className="space-y-2">
@@ -184,8 +214,8 @@ export function AppointmentForm({
       <Button
         type="submit"
         className="w-full"
-        style={{ backgroundColor: '#E8185A' }}
-        disabled={loading}
+        style={{ backgroundColor: conflictError ? '#9CA3AF' : '#E8185A' }}
+        disabled={loading || !!conflictError}
       >
         {loading ? 'Kaydediliyor...' : 'Randevu Oluştur'}
       </Button>

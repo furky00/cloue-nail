@@ -12,6 +12,7 @@ export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([])
   const [name, setName] = useState('')
   const [price, setPrice] = useState('')
+  const [duration, setDuration] = useState('60')
 
   async function loadServices() {
     const { data } = await supabase.from('services').select('*').order('name')
@@ -22,9 +23,10 @@ export default function ServicesPage() {
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
-    await supabase.from('services').insert({ name, price: parseFloat(price) })
+    await supabase.from('services').insert({ name, price: parseFloat(price), duration_minutes: parseInt(duration) })
     setName('')
     setPrice('')
+    setDuration('60')
     loadServices()
   }
 
@@ -46,6 +48,10 @@ export default function ServicesPage() {
           <Label>Fiyat (₺)</Label>
           <Input type="number" value={price} onChange={e => setPrice(e.target.value)} required />
         </div>
+        <div className="space-y-1">
+          <Label>Varsayılan Süre (dakika)</Label>
+          <Input type="number" value={duration} onChange={e => setDuration(e.target.value)} required />
+        </div>
         <Button type="submit" className="w-full" style={{ backgroundColor: '#E8185A' }}>Ekle</Button>
       </form>
 
@@ -55,6 +61,7 @@ export default function ServicesPage() {
             <div>
               <p className="font-medium">{s.name}</p>
               <p style={{ color: '#E8185A' }}>₺{s.price}</p>
+              <p className="text-xs text-gray-400">{s.duration_minutes} dk</p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => handleDelete(s.id)} className="text-red-500">
               Sil

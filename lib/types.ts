@@ -21,6 +21,14 @@ export interface Service {
   id: string
   name: string
   price: number
+  duration_minutes: number
+}
+
+export interface StaffServiceDuration {
+  id: string
+  staff_id: string
+  service_id: string
+  duration_minutes: number
 }
 
 export interface Appointment {
