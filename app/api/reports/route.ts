@@ -31,11 +31,12 @@ export async function GET(request: Request) {
 
   const staffSummary = appointments.reduce((acc, apt) => {
     const key = apt.staff?.id ?? 'unknown'
-    if (!acc[key]) acc[key] = { name: apt.staff?.name ?? '-', count: 0, total: 0 }
+    if (!acc[key]) acc[key] = { name: apt.staff?.name ?? '-', count: 0, total: 0, commission: 0 }
     acc[key].count++
     acc[key].total += Number(apt.price)
+    acc[key].commission = acc[key].total * 0.5
     return acc
-  }, {} as Record<string, { name: string; count: number; total: number }>)
+  }, {} as Record<string, { name: string; count: number; total: number; commission: number }>)
 
   const serviceSummary = appointments.reduce((acc, apt) => {
     const key = apt.service?.id ?? 'unknown'
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     totalCount: appointments.length,
     totalRevenue: appointments.reduce((sum, a) => sum + Number(a.price), 0),
-    staffSummary: Object.values(staffSummary).sort((a: any, b: any) => b.total - a.total),
+    staffSummary: Object.values(staffSummary).sort((a: any, b: any) => b.total - a.total) as Array<{ name: string; count: number; total: number; commission: number }>,
     serviceSummary: Object.values(serviceSummary).sort((a: any, b: any) => b.count - a.count),
   })
 }

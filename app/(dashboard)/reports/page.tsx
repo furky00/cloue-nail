@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 interface ReportData {
   totalCount: number
   totalRevenue: number
-  staffSummary: Array<{ name: string; count: number; total: number }>
+  staffSummary: Array<{ name: string; count: number; total: number; commission: number }>
   serviceSummary: Array<{ name: string; count: number; total: number }>
 }
 
@@ -77,14 +77,20 @@ export default function ReportsPage() {
 
           <Card>
             <CardHeader><CardTitle className="text-base">Çalışan Bazlı</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
               {data.staffSummary.map(s => (
-                <div key={s.name} className="flex justify-between items-center">
-                  <div>
-                    <p className="font-medium">{s.name}</p>
-                    <p className="text-sm text-gray-500">{s.count} işlem</p>
+                <div key={s.name} className="border-b last:border-0 pb-3 last:pb-0">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{s.name}</p>
+                      <p className="text-sm text-gray-500">{s.count} işlem</p>
+                    </div>
+                    <p className="font-semibold" style={{ color: '#E8185A' }}>₺{s.total.toLocaleString('tr-TR')}</p>
                   </div>
-                  <p className="font-semibold" style={{ color: '#E8185A' }}>₺{s.total.toLocaleString('tr-TR')}</p>
+                  <div className="flex justify-between items-center mt-1 bg-amber-50 rounded px-2 py-1">
+                    <p className="text-xs text-amber-700 font-medium">Hak Ediş (%50)</p>
+                    <p className="text-sm font-bold text-amber-700">₺{s.commission.toLocaleString('tr-TR')}</p>
+                  </div>
                 </div>
               ))}
             </CardContent>
