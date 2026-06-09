@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendWhatsApp } from '@/lib/whatsapp'
-import { addDays, format } from 'date-fns'
+import { addDays, subDays, format } from 'date-fns'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -14,22 +14,48 @@ export async function GET(request: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
+  const now = new Date()
+  let sent = 0
 
-  const { data: appointments } = await supabase
+  // --- 2 saatlik hatırlatma ---
+  // Her saat başı çalışır, şu andan 2 saat sonraki randevuları bulur
+  const targetHour = (now.getHours() + 2) % 24
+  const targetDate = targetHour < now.getHours()
+    ? format(addDays(now, 1), 'yyyy-MM-dd') // gece yarısını geçtiyse ertesi gün
+    : format(now, 'yyyy-MM-dd')
+  const targetTime = `${String(targetHour).padStart(2, '0')}:`
+
+  const { data: upcoming } = await supabase
     .from('appointments')
     .select('*, customer:customers(name, phone), service:services(name)')
-    .eq('date', tomorrow)
+    .eq('date', targetDate)
     .eq('status', 'pending')
+    .like('time', `${targetTime}%`)
 
-  if (!appointments) return NextResponse.json({ sent: 0 })
-
-  let sent = 0
-  for (const apt of appointments) {
+  for (const apt of upcoming ?? []) {
     if (apt.customer?.phone) {
       await sendWhatsApp(
         apt.customer.phone,
-        `Merhaba ${apt.customer.name}! 💅\nYarın saat ${apt.time?.slice(0, 5)}'de Cloué Nail'deki ${apt.service?.name} randevunuzu hatırlatırız.\nBizi tercih ettiğiniz için teşekkürler! 🌸`
+        `Merhaba ${apt.customer.name}! 💅\nBugün saat ${apt.time?.slice(0, 5)}'de Cloué Nail'deki ${apt.service?.name} randevunuz 2 saat sonra başlıyor.\nSizi bekliyoruz! 🌸`
+      )
+      sent++
+    }
+  }
+
+  // --- 3 gün sonra memnuniyet mesajı ---
+  const threeDaysAgo = format(subDays(now, 3), 'yyyy-MM-dd')
+
+  const { data: completed } = await supabase
+    .from('appointments')
+    .select('*, customer:customers(name, phone), service:services(name)')
+    .eq('date', threeDaysAgo)
+    .eq('status', 'completed')
+
+  for (const apt of completed ?? []) {
+    if (apt.customer?.phone) {
+      await sendWhatsApp(
+        apt.customer.phone,
+        `Merhaba ${apt.customer.name}! 😊\n${apt.service?.name} hizmetimizden memnun kaldınız mı?\nGörüşleriniz bizim için çok değerli. Bizi tercih ettiğiniz için teşekkür ederiz! 💕\n— Cloué Nail`
       )
       sent++
     }
