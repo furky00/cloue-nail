@@ -26,7 +26,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      setError(`Hata: ${error.message} (${error.status})`)
+      setError('Email veya şifre hatalı')
       setLoading(false)
       return
     }
