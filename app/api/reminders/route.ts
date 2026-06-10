@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     if (apt.customer?.phone) {
       await sendWhatsApp(
         apt.customer.phone,
-        `Merhaba ${apt.customer.name}! 💅\nBugün saat ${apt.time?.slice(0, 5)}'de Cloué Nail'deki ${apt.service?.name} randevunuz 2 saat sonra başlıyor.\nSizi bekliyoruz! 🌸`
+        `Merhaba ${apt.customer.name} Hanım! 💅\nBugün saat ${apt.time?.slice(0, 5)}'de Cloué Nail'deki ${apt.service?.name} randevunuz 2 saat sonra başlıyor.\nSizi bekliyoruz! 🌸`
       )
       sent++
     }
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     if (apt.customer?.phone) {
       await sendWhatsApp(
         apt.customer.phone,
-        `Merhaba ${apt.customer.name}! 😊\n${apt.staff?.name} ile yaptırdığınız ${apt.service?.name} hizmetimizden memnun kaldınız mı?\nGörüşleriniz bizim için çok değerli. Bizi tercih ettiğiniz için teşekkür ederiz! 💕\n— Cloué Nail`
+        `Merhaba ${apt.customer.name} Hanım! 😊\n${apt.staff?.name} ile yaptırdığınız ${apt.service?.name} hizmetimizden memnun kaldınız mı?\nGörüşleriniz bizim için çok değerli. Bizi tercih ettiğiniz için teşekkür ederiz! 💕\n— Cloué Nail`
       )
       sent++
     }
