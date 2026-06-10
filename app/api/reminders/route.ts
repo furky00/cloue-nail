@@ -17,6 +17,10 @@ export async function GET(request: Request) {
   const now = new Date()
   let sent = 0
 
+  const MALE_NAMES = ['mehmet', 'arda']
+  const staffTitle = (name: string) =>
+    MALE_NAMES.includes(name?.split(' ')[0].toLowerCase()) ? 'Bey' : 'Hanım'
+
   // --- 2 saatlik hatırlatma ---
   // Her saat başı çalışır, şu andan 2 saat sonraki randevuları bulur
   const targetHour = (now.getHours() + 2) % 24
@@ -55,7 +59,7 @@ export async function GET(request: Request) {
     if (apt.customer?.phone) {
       await sendWhatsApp(
         apt.customer.phone,
-        `Merhaba ${apt.customer.name.split(' ')[0]} Hanım! 😊\n${apt.staff?.name} ile yaptırdığınız ${apt.service?.name} hizmetimizden memnun kaldınız mı?\nGörüşleriniz bizim için çok değerli. Bizi tercih ettiğiniz için teşekkür ederiz! 💕\n— Cloué Nail`
+        `Merhaba ${apt.customer.name.split(' ')[0]} Hanım! 😊\n${apt.staff?.name} ${staffTitle(apt.staff?.name)} ile yaptırdığınız ${apt.service?.name} hizmetimizden memnun kaldınız mı?\nGörüşleriniz bizim için çok değerli. Bizi tercih ettiğiniz için teşekkür ederiz! 💕\n— Cloué Nail`
       )
       sent++
     }
