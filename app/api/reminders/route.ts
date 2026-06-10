@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   const { data: upcoming } = await supabase
     .from('appointments')
-    .select('*, customer:customers(name, phone), service:services(name)')
+    .select('*, customer:customers(name, phone), service:services(name), staff:users(name)')
     .eq('date', targetDate)
     .eq('status', 'pending')
     .like('time', `${targetTime}%`)
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
 
   const { data: completed } = await supabase
     .from('appointments')
-    .select('*, customer:customers(name, phone), service:services(name)')
+    .select('*, customer:customers(name, phone), service:services(name), staff:users(name)')
     .eq('date', threeDaysAgo)
     .eq('status', 'completed')
 
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     if (apt.customer?.phone) {
       await sendWhatsApp(
         apt.customer.phone,
-        `Merhaba ${apt.customer.name}! 😊\n${apt.service?.name} hizmetimizden memnun kaldınız mı?\nGörüşleriniz bizim için çok değerli. Bizi tercih ettiğiniz için teşekkür ederiz! 💕\n— Cloué Nail`
+        `Merhaba ${apt.customer.name}! 😊\n${apt.staff?.name} ile yaptırdığınız ${apt.service?.name} hizmetimizden memnun kaldınız mı?\nGörüşleriniz bizim için çok değerli. Bizi tercih ettiğiniz için teşekkür ederiz! 💕\n— Cloué Nail`
       )
       sent++
     }
