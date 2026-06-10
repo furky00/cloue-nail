@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     if (apt.customer?.phone) {
       await sendWhatsApp(
         apt.customer.phone,
-        `Merhaba ${apt.customer.name.split(' ')[0]} Hanım! 💅\nBugün saat ${apt.time?.slice(0, 5)}'de Cloué Nail'deki ${apt.service?.name} randevunuz 2 saat sonra başlıyor.\nSizi bekliyoruz! 🌸`
+        `Merhaba ${apt.customer.name.split(' ')[0]} Hanım! 💅\nBugün saat ${apt.time?.slice(0, 5)}'de ${apt.staff?.name} ${staffTitle(apt.staff?.name)} ile Cloué Nail'deki ${apt.service?.name} randevunuz 2 saat sonra başlıyor.\nSizi bekliyoruz! 🌸`
       )
       sent++
     }
