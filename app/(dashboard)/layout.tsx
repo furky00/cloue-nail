@@ -22,15 +22,20 @@ export default async function DashboardLayout({
   const isAdmin = profile?.role === 'admin'
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <h1 className="font-bold text-lg" style={{ color: '#2D3B6B' }}>Cloué Nail</h1>
+    <div className="min-h-screen" style={{ backgroundColor: '#FAF7F5' }}>
+      <header className="bg-white/95 backdrop-blur-md border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">{profile?.name}</span>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ background: 'linear-gradient(135deg, #C9547A, #2D3B6B)' }}>
+            C
+          </div>
+          <h1 className="font-bold text-base tracking-tight" style={{ color: '#2D3B6B' }}>Cloué Nail</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500 font-medium">{profile?.name}</span>
           <LogoutButton />
         </div>
       </header>
-      <main className="pb-20">
+      <main className="pb-24">
         {children}
       </main>
       <BottomNav isAdmin={isAdmin} />

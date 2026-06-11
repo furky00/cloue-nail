@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { User, Service } from '@/lib/types'
+import { AlertCircle } from 'lucide-react'
+import type { User, Service, PaymentType } from '@/lib/types'
 
 interface AppointmentFormProps {
   currentUserId: string
@@ -17,13 +18,19 @@ interface AppointmentFormProps {
   defaultDate?: string
 }
 
-export function AppointmentForm({
-  currentUserId,
-  isAdmin,
-  staffList,
-  services,
-  defaultDate,
-}: AppointmentFormProps) {
+const PAYMENT_LABELS: Record<PaymentType, string> = {
+  nakit: '💵 Nakit',
+  kart: '💳 Kart',
+  iban: '🏦 IBAN',
+}
+
+function addMinutes(time: string, mins: number) {
+  const [h, m] = time.split(':').map(Number)
+  const total = h * 60 + m + mins
+  return `${Math.floor(total / 60).toString().padStart(2, '0')}:${(total % 60).toString().padStart(2, '0')}`
+}
+
+export function AppointmentForm({ currentUserId, isAdmin, staffList, services, defaultDate }: AppointmentFormProps) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -34,56 +41,56 @@ export function AppointmentForm({
   const [date, setDate] = useState(defaultDate ?? new Date().toISOString().split('T')[0])
   const [time, setTime] = useState('10:00')
   const [price, setPrice] = useState('')
+  const [discount, setDiscount] = useState('0')
+  const [paymentType, setPaymentType] = useState<PaymentType>('nakit')
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [duration, setDuration] = useState(60)
   const [conflictError, setConflictError] = useState('')
 
-  const handleStaffChange = (value: string | null) => {
-    if (value) setStaffId(value)
-  }
-
-  const handleServiceChange = (value: string | null) => {
-    if (value) setServiceId(value)
-  }
-
   useEffect(() => {
     const service = services.find(s => s.id === serviceId)
     if (service) setPrice(service.price.toString())
   }, [serviceId, services])
 
-  async function checkConflict(sId: string, stId: string, d: string, t: string) {
-    if (!sId || !stId || !d || !t) return
-    const res = await fetch('/api/appointments/check-conflict', {
+  useEffect(() => {
+    if (!serviceId || !date || !time) return
+    const effStaffId = staffId || currentUserId
+    if (!effStaffId) return
+
+    fetch('/api/appointments/check-conflict', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staff_id: stId, date: d, time: t, service_id: sId }),
+      body: JSON.stringify({ staff_id: effStaffId, date, time, service_id: serviceId }),
     })
-    const data = await res.json()
-    setDuration(data.duration ?? 60)
-    setConflictError(data.conflict ? data.message : '')
-  }
-
-  useEffect(() => {
-    checkConflict(serviceId, staffId || currentUserId, date, time)
+      .then(r => r.json())
+      .then(data => {
+        setDuration(data.duration ?? 60)
+        setConflictError(data.conflict ? data.message : '')
+      })
   }, [serviceId, staffId, date, time])
+
+  const netAmount = Math.max(0, parseFloat(price || '0') - parseFloat(discount || '0'))
+  const endTime = time ? addMinutes(time, duration) : ''
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (conflictError) return
     setLoading(true)
     setError('')
 
-    // Müşteriyi bul veya oluştur
     let customerId: string
     const { data: existing } = await supabase
       .from('customers')
       .select('id')
       .eq('phone', customerPhone)
-      .single()
+      .maybeSingle()
 
     if (existing) {
       customerId = existing.id
+      // İsmi güncelle
+      await supabase.from('customers').update({ name: customerName }).eq('id', existing.id)
     } else {
       const { data: newCustomer, error: customerError } = await supabase
         .from('customers')
@@ -99,35 +106,44 @@ export function AppointmentForm({
       customerId = newCustomer.id
     }
 
-    const { error: aptError } = await supabase.from('appointments').insert({
+    const selectedService = services.find(s => s.id === serviceId)
+    const endTimeStr = endTime ? `${endTime}:00` : null
+
+    const { data: newApt, error: aptError } = await supabase.from('appointments').insert({
       customer_id: customerId,
       staff_id: staffId || currentUserId,
       service_id: serviceId,
       date,
       time,
+      end_time: endTimeStr,
       price: parseFloat(price),
+      discount: parseFloat(discount || '0'),
+      net_amount: netAmount,
+      payment_type: paymentType,
       note: note || null,
       status: 'pending',
-    })
+    }).select('id, token').single()
 
-    if (aptError) {
-      setError('Randevu oluşturulamadı: ' + aptError.message)
+    if (aptError || !newApt) {
+      setError('Randevu oluşturulamadı: ' + aptError?.message)
       setLoading(false)
       return
     }
 
-    // WhatsApp bildirimi gönder
+    // Müşteriye onay WA mesajı
     await fetch('/api/notify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'new_appointment',
+        appointmentId: newApt.id,
         staffId: staffId || currentUserId,
         customerPhone,
         customerName,
         date,
         time,
-        serviceName: services.find(s => s.id === serviceId)?.name,
+        serviceName: selectedService?.name,
+        token: newApt.token,
       }),
     })
 
@@ -136,85 +152,128 @@ export function AppointmentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 space-y-4">
-      <div className="space-y-2">
-        <Label>Müşteri Adı</Label>
-        <Input value={customerName} onChange={e => setCustomerName(e.target.value)} required />
+    <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-lg mx-auto">
+      {/* Müşteri bilgileri */}
+      <div className="bg-white rounded-2xl card-shadow p-4 space-y-3">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Müşteri</p>
+        <div className="space-y-1.5">
+          <Label className="text-sm">Ad Soyad</Label>
+          <Input
+            value={customerName}
+            onChange={e => setCustomerName(e.target.value)}
+            className="rounded-xl border-gray-200 h-11"
+            placeholder="Örn: Elif Yılmaz"
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm">Telefon (WhatsApp)</Label>
+          <Input
+            type="tel"
+            placeholder="+905xxxxxxxxx"
+            value={customerPhone}
+            onChange={e => setCustomerPhone(e.target.value)}
+            className="rounded-xl border-gray-200 h-11"
+            required
+          />
+        </div>
       </div>
-      <div className="space-y-2">
-        <Label>Müşteri Telefonu</Label>
-        <Input
-          type="tel"
-          placeholder="+905xxxxxxxxx"
-          value={customerPhone}
-          onChange={e => setCustomerPhone(e.target.value)}
-          required
-        />
-      </div>
-      {isAdmin && (
-        <div className="space-y-2">
-          <Label>Çalışan</Label>
-          <Select value={staffId} onValueChange={handleStaffChange} required>
-            <SelectTrigger><SelectValue placeholder="Çalışan seç" /></SelectTrigger>
+
+      {/* Randevu detayları */}
+      <div className="bg-white rounded-2xl card-shadow p-4 space-y-3">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Randevu</p>
+
+        {isAdmin && (
+          <div className="space-y-1.5">
+            <Label className="text-sm">Personel</Label>
+            <Select value={staffId} onValueChange={(v) => v && setStaffId(v)} required>
+              <SelectTrigger className="rounded-xl border-gray-200 h-11"><SelectValue placeholder="Personel seç" /></SelectTrigger>
+              <SelectContent>
+                {staffList.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label className="text-sm">Hizmet</Label>
+          <Select value={serviceId} onValueChange={(v) => v && setServiceId(v)} required>
+            <SelectTrigger className="rounded-xl border-gray-200 h-11"><SelectValue placeholder="Hizmet seç" /></SelectTrigger>
             <SelectContent>
-              {staffList.map(s => (
-                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+              {services.map(s => (
+                <SelectItem key={s.id} value={s.id}>{s.name} — ₺{s.price} · {s.duration_minutes}dk</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-      )}
-      <div className="space-y-2">
-        <Label>Hizmet</Label>
-        <Select value={serviceId} onValueChange={handleServiceChange} required>
-          <SelectTrigger><SelectValue placeholder="Hizmet seç" /></SelectTrigger>
-          <SelectContent>
-            {services.map(s => (
-              <SelectItem key={s.id} value={s.id}>{s.name} — ₺{s.price}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Tarih</Label>
-          <Input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-sm">Tarih</Label>
+            <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-xl border-gray-200 h-11" required />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Saat</Label>
+            <Input type="time" value={time} onChange={e => setTime(e.target.value)} className="rounded-xl border-gray-200 h-11" required />
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label>Saat</Label>
-          <Input type="time" value={time} onChange={e => setTime(e.target.value)} required />
-          {duration > 0 && time && (
-            <p className="text-xs text-gray-400">
-              Bitiş: {(() => {
-                const [h, m] = time.split(':').map(Number)
-                const end = h * 60 + m + duration
-                return `${Math.floor(end/60).toString().padStart(2,'0')}:${(end%60).toString().padStart(2,'0')}`
-              })()}
-            </p>
-          )}
-          {conflictError && (
-            <p className="text-red-500 text-sm font-medium">⚠️ {conflictError}</p>
-          )}
+
+        {serviceId && endTime && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${conflictError ? 'bg-red-50 text-red-600' : 'bg-green-50 text-emerald-700'}`}>
+            {conflictError ? (
+              <><AlertCircle size={15} /> {conflictError}</>
+            ) : (
+              <span>✓ {time} – {endTime} ({duration} dk)</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Ödeme */}
+      <div className="bg-white rounded-2xl card-shadow p-4 space-y-3">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Ödeme</p>
+
+        <div className="space-y-1.5">
+          <Label className="text-sm">Ödeme Tipi</Label>
+          <Select value={paymentType} onValueChange={(v) => setPaymentType(v as PaymentType)}>
+            <SelectTrigger className="rounded-xl border-gray-200 h-11"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.entries(PAYMENT_LABELS) as [PaymentType, string][]).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-sm">Tutar (₺)</Label>
+            <Input type="number" value={price} onChange={e => setPrice(e.target.value)} className="rounded-xl border-gray-200 h-11" required />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm">İndirim (₺)</Label>
+            <Input type="number" value={discount} onChange={e => setDiscount(e.target.value)} className="rounded-xl border-gray-200 h-11" min="0" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between bg-rose-50 rounded-xl px-4 py-3">
+          <span className="text-sm font-semibold text-[#C9547A]">Net Tutar</span>
+          <span className="text-xl font-bold text-[#C9547A]">₺{netAmount.toLocaleString('tr-TR')}</span>
         </div>
       </div>
-      <div className="space-y-2">
-        <Label>Fiyat (₺)</Label>
-        <Input
-          type="number"
-          value={price}
-          onChange={e => setPrice(e.target.value)}
-          required
-        />
+
+      {/* Not */}
+      <div className="bg-white rounded-2xl card-shadow p-4 space-y-2">
+        <Label className="text-sm">Not (isteğe bağlı)</Label>
+        <Input value={note} onChange={e => setNote(e.target.value)} placeholder="Özel istek veya not..." className="rounded-xl border-gray-200 h-11" />
       </div>
-      <div className="space-y-2">
-        <Label>Not (isteğe bağlı)</Label>
-        <Input value={note} onChange={e => setNote(e.target.value)} />
-      </div>
-      {error && <p className="text-red-500 text-sm">{error}</p>}
+
+      {error && <p className="text-red-500 text-sm px-1">{error}</p>}
+
       <Button
         type="submit"
-        className="w-full"
-        style={{ backgroundColor: conflictError ? '#9CA3AF' : '#E8185A' }}
+        className="w-full h-14 rounded-2xl text-white font-semibold text-base"
+        style={{ backgroundColor: conflictError ? '#9CA3AF' : '#C9547A' }}
         disabled={loading || !!conflictError}
       >
         {loading ? 'Kaydediliyor...' : 'Randevu Oluştur'}

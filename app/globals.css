@@ -54,10 +54,12 @@
 
 :root {
   --brand-navy: #2D3B6B;
-  --brand-pink: #E8185A;
-  --brand-pink-light: #F4A0B5;
-  --brand-pink-medium: #E85A8A;
-  --background: oklch(1 0 0);
+  --brand-pink: #C9547A;
+  --brand-pink-raw: #E8185A;
+  --brand-pink-light: #FDE8EF;
+  --brand-pink-medium: #D4789A;
+  --brand-gold: #B8934A;
+  --background: oklch(0.98 0.005 60);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -128,11 +130,26 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
   }
   html {
     @apply font-sans;
   }
+}
+
+/* iOS safe area */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.mb-safe { margin-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Premium card shadow */
+.card-shadow {
+  box-shadow: 0 2px 12px rgba(45, 59, 107, 0.06), 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.card-shadow-lg {
+  box-shadow: 0 8px 32px rgba(45, 59, 107, 0.10), 0 2px 8px rgba(0,0,0,0.04);
 }
