@@ -17,7 +17,7 @@ export default async function NewAppointmentPage() {
 
   const [{ data: staffList }, { data: services }] = await Promise.all([
     supabase.from('users').select('id, name, role, email, phone, created_at').eq('role', 'staff').order('name'),
-    supabase.from('services').select('*').order('name'),
+    supabase.from('services').select('*').eq('is_active', true).order('category').order('name'),
   ])
 
   return (

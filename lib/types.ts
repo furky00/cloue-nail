@@ -26,7 +26,19 @@ export interface Service {
   id: string
   name: string
   price: number
+  campaign_price?: number | null
   duration_minutes: number
+  category?: string
+  is_active?: boolean
+}
+
+export interface AppointmentService {
+  id: string
+  appointment_id: string
+  service_id: string | null
+  service_name: string
+  duration_minutes: number
+  price: number
 }
 
 export interface Appointment {
@@ -46,10 +58,12 @@ export interface Appointment {
   token: string | null
   deleted_at: string | null
   deleted_by: string | null
+  duration_minutes: number | null
   created_at: string
   customer?: Customer
   staff?: User
   service?: Service
+  appointment_services?: AppointmentService[]
 }
 
 export interface WhatsappLog {

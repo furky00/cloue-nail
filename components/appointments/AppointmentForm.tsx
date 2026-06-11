@@ -1,14 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Plus, Trash2, Clock } from 'lucide-react'
 import type { User, Service, PaymentType } from '@/lib/types'
+
+interface ServiceItem {
+  service: Service
+  duration: number
+  price: number
+}
 
 interface AppointmentFormProps {
   currentUserId: string
@@ -37,49 +43,82 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [staffId, setStaffId] = useState(isAdmin ? '' : currentUserId)
-  const [serviceId, setServiceId] = useState('')
   const [date, setDate] = useState(defaultDate ?? new Date().toISOString().split('T')[0])
   const [time, setTime] = useState('10:00')
-  const [price, setPrice] = useState('')
+  const [selectedServices, setSelectedServices] = useState<ServiceItem[]>([])
+  const [addingServiceId, setAddingServiceId] = useState('')
   const [discount, setDiscount] = useState('0')
   const [paymentType, setPaymentType] = useState<PaymentType>('nakit')
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [duration, setDuration] = useState(60)
   const [conflictError, setConflictError] = useState('')
 
-  useEffect(() => {
-    const service = services.find(s => s.id === serviceId)
-    if (service) setPrice(service.price.toString())
-  }, [serviceId, services])
+  const activeServices = services.filter(s => s.is_active !== false)
+  const groupedServices = activeServices.reduce((acc, s) => {
+    const cat = s.category ?? 'Diğer'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(s)
+    return acc
+  }, {} as Record<string, Service[]>)
 
-  useEffect(() => {
-    if (!serviceId || !date || !time) return
+  const totalDuration = selectedServices.reduce((s, i) => s + i.duration, 0)
+  const totalPrice = selectedServices.reduce((s, i) => s + i.price, 0)
+  const netAmount = Math.max(0, totalPrice - parseFloat(discount || '0'))
+  const endTime = time && totalDuration > 0 ? addMinutes(time, totalDuration) : ''
+
+  const checkConflict = useCallback(async () => {
     const effStaffId = staffId || currentUserId
-    if (!effStaffId) return
-
-    fetch('/api/appointments/check-conflict', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staff_id: effStaffId, date, time, service_id: serviceId }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        setDuration(data.duration ?? 60)
-        setConflictError(data.conflict ? data.message : '')
+    if (!effStaffId || !date || !time || totalDuration === 0) return
+    try {
+      const res = await fetch('/api/appointments/check-conflict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staff_id: effStaffId, date, time, duration_minutes: totalDuration }),
       })
-  }, [serviceId, staffId, date, time])
+      const data = await res.json()
+      setConflictError(data.conflict ? data.message : '')
+    } catch { /* ignore */ }
+  }, [staffId, currentUserId, date, time, totalDuration])
 
-  const netAmount = Math.max(0, parseFloat(price || '0') - parseFloat(discount || '0'))
-  const endTime = time ? addMinutes(time, duration) : ''
+  useEffect(() => { checkConflict() }, [checkConflict])
+
+  function addService() {
+    if (!addingServiceId) return
+    const service = services.find(s => s.id === addingServiceId)
+    if (!service) return
+    if (selectedServices.find(i => i.service.id === service.id)) return
+    setSelectedServices(prev => [...prev, {
+      service,
+      duration: service.duration_minutes,
+      price: service.campaign_price ?? service.price,
+    }])
+    setAddingServiceId('')
+  }
+
+  function removeService(serviceId: string) {
+    setSelectedServices(prev => prev.filter(i => i.service.id !== serviceId))
+  }
+
+  function updateDuration(serviceId: string, val: string) {
+    setSelectedServices(prev => prev.map(i =>
+      i.service.id === serviceId ? { ...i, duration: parseInt(val) || 0 } : i
+    ))
+  }
+
+  function updatePrice(serviceId: string, val: string) {
+    setSelectedServices(prev => prev.map(i =>
+      i.service.id === serviceId ? { ...i, price: parseFloat(val) || 0 } : i
+    ))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (conflictError) return
+    if (conflictError || selectedServices.length === 0) return
     setLoading(true)
     setError('')
 
+    // Müşteri bul veya oluştur
     let customerId: string
     const { data: existing } = await supabase
       .from('customers')
@@ -89,7 +128,6 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
 
     if (existing) {
       customerId = existing.id
-      // İsmi güncelle
       await supabase.from('customers').update({ name: customerName }).eq('id', existing.id)
     } else {
       const { data: newCustomer, error: customerError } = await supabase
@@ -97,7 +135,6 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
         .insert({ name: customerName, phone: customerPhone })
         .select('id')
         .single()
-
       if (customerError || !newCustomer) {
         setError('Müşteri oluşturulamadı')
         setLoading(false)
@@ -106,23 +143,28 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
       customerId = newCustomer.id
     }
 
-    const selectedService = services.find(s => s.id === serviceId)
+    const primaryService = selectedServices[0]
     const endTimeStr = endTime ? `${endTime}:00` : null
 
-    const { data: newApt, error: aptError } = await supabase.from('appointments').insert({
-      customer_id: customerId,
-      staff_id: staffId || currentUserId,
-      service_id: serviceId,
-      date,
-      time,
-      end_time: endTimeStr,
-      price: parseFloat(price),
-      discount: parseFloat(discount || '0'),
-      net_amount: netAmount,
-      payment_type: paymentType,
-      note: note || null,
-      status: 'pending',
-    }).select('id, token').single()
+    const { data: newApt, error: aptError } = await supabase
+      .from('appointments')
+      .insert({
+        customer_id: customerId,
+        staff_id: staffId || currentUserId,
+        service_id: primaryService.service.id,
+        date,
+        time,
+        end_time: endTimeStr,
+        duration_minutes: totalDuration,
+        price: totalPrice,
+        discount: parseFloat(discount || '0'),
+        net_amount: netAmount,
+        payment_type: paymentType,
+        note: note || null,
+        status: 'pending',
+      })
+      .select('id, token')
+      .single()
 
     if (aptError || !newApt) {
       setError('Randevu oluşturulamadı: ' + aptError?.message)
@@ -130,7 +172,20 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
       return
     }
 
-    // Müşteriye onay WA mesajı
+    // Çoklu hizmet kaydı
+    if (selectedServices.length > 0) {
+      await supabase.from('appointment_services').insert(
+        selectedServices.map(i => ({
+          appointment_id: newApt.id,
+          service_id: i.service.id,
+          service_name: i.service.name,
+          duration_minutes: i.duration,
+          price: i.price,
+        }))
+      )
+    }
+
+    // Müşteriye onay WA
     await fetch('/api/notify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -142,7 +197,7 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
         customerName,
         date,
         time,
-        serviceName: selectedService?.name,
+        serviceName: selectedServices.map(i => i.service.name).join(' + '),
         token: newApt.token,
       }),
     })
@@ -153,36 +208,24 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
 
   return (
     <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-lg mx-auto">
-      {/* Müşteri bilgileri */}
+      {/* Müşteri */}
       <div className="bg-white rounded-2xl card-shadow p-4 space-y-3">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Müşteri</p>
         <div className="space-y-1.5">
           <Label className="text-sm">Ad Soyad</Label>
-          <Input
-            value={customerName}
-            onChange={e => setCustomerName(e.target.value)}
-            className="rounded-xl border-gray-200 h-11"
-            placeholder="Örn: Elif Yılmaz"
-            required
-          />
+          <Input value={customerName} onChange={e => setCustomerName(e.target.value)}
+            className="rounded-xl border-gray-200 h-11" placeholder="Örn: Elif Yılmaz" required />
         </div>
         <div className="space-y-1.5">
           <Label className="text-sm">Telefon (WhatsApp)</Label>
-          <Input
-            type="tel"
-            placeholder="+905xxxxxxxxx"
-            value={customerPhone}
-            onChange={e => setCustomerPhone(e.target.value)}
-            className="rounded-xl border-gray-200 h-11"
-            required
-          />
+          <Input type="tel" placeholder="+905xxxxxxxxx" value={customerPhone}
+            onChange={e => setCustomerPhone(e.target.value)} className="rounded-xl border-gray-200 h-11" required />
         </div>
       </div>
 
-      {/* Randevu detayları */}
+      {/* Personel + Zaman */}
       <div className="bg-white rounded-2xl card-shadow p-4 space-y-3">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Randevu</p>
-
         {isAdmin && (
           <div className="space-y-1.5">
             <Label className="text-sm">Personel</Label>
@@ -194,48 +237,122 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
             </Select>
           </div>
         )}
-
-        <div className="space-y-1.5">
-          <Label className="text-sm">Hizmet</Label>
-          <Select value={serviceId} onValueChange={(v) => v && setServiceId(v)} required>
-            <SelectTrigger className="rounded-xl border-gray-200 h-11"><SelectValue placeholder="Hizmet seç" /></SelectTrigger>
-            <SelectContent>
-              {services.map(s => (
-                <SelectItem key={s.id} value={s.id}>{s.name} — ₺{s.price} · {s.duration_minutes}dk</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label className="text-sm">Tarih</Label>
-            <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-xl border-gray-200 h-11" required />
+            <Input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="rounded-xl border-gray-200 h-11" required />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm">Saat</Label>
-            <Input type="time" value={time} onChange={e => setTime(e.target.value)} className="rounded-xl border-gray-200 h-11" required />
+            <Label className="text-sm">Başlangıç</Label>
+            <Input type="time" value={time} onChange={e => setTime(e.target.value)}
+              className="rounded-xl border-gray-200 h-11" required />
           </div>
         </div>
 
-        {serviceId && endTime && (
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${conflictError ? 'bg-red-50 text-red-600' : 'bg-green-50 text-emerald-700'}`}>
-            {conflictError ? (
-              <><AlertCircle size={15} /> {conflictError}</>
-            ) : (
-              <span>✓ {time} – {endTime} ({duration} dk)</span>
+        {/* Süre + bitiş özeti */}
+        {totalDuration > 0 && (
+          <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm ${conflictError ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
+            <Clock size={14} />
+            {conflictError ? conflictError : (
+              <span>{time} – {endTime} <span className="opacity-70">({totalDuration} dk)</span></span>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Hizmetler */}
+      <div className="bg-white rounded-2xl card-shadow p-4 space-y-3">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Hizmetler</p>
+
+        {/* Seçili hizmetler listesi */}
+        {selectedServices.length > 0 && (
+          <div className="space-y-2">
+            {selectedServices.map(item => (
+              <div key={item.service.id} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-gray-900 text-sm">{item.service.name}</p>
+                  <button type="button" onClick={() => removeService(item.service.id)}
+                    className="text-red-400 hover:text-red-500 p-0.5">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-500">Süre (dk)</Label>
+                    <Input
+                      type="number"
+                      value={item.duration}
+                      onChange={e => updateDuration(item.service.id, e.target.value)}
+                      className="rounded-lg border-gray-200 h-9 text-sm"
+                      min="1"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-500">Fiyat (₺)</Label>
+                    <Input
+                      type="number"
+                      value={item.price}
+                      onChange={e => updatePrice(item.service.id, e.target.value)}
+                      className="rounded-lg border-gray-200 h-9 text-sm"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Toplam */}
+            <div className="flex items-center justify-between bg-rose-50 rounded-xl px-3 py-2.5">
+              <div>
+                <p className="text-xs text-[#C9547A] font-medium">Toplam</p>
+                <p className="text-xs text-gray-400">{totalDuration} dakika</p>
+              </div>
+              <p className="text-lg font-bold text-[#C9547A]">₺{totalPrice.toLocaleString('tr-TR')}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Hizmet ekle */}
+        <div className="flex gap-2">
+          <Select value={addingServiceId} onValueChange={(v) => v && setAddingServiceId(v)}>
+            <SelectTrigger className="rounded-xl border-gray-200 h-11 flex-1">
+              <SelectValue placeholder="Hizmet seç..." />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(groupedServices).map(([category, svcs]) => (
+                <div key={category}>
+                  <div className="px-2 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">{category}</div>
+                  {svcs
+                    .filter(s => !selectedServices.find(i => i.service.id === s.id))
+                    .map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} · {s.duration_minutes}dk
+                        {s.campaign_price != null && ` · ₺${s.campaign_price}`}
+                      </SelectItem>
+                    ))}
+                </div>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="button" onClick={addService} disabled={!addingServiceId}
+            className="h-11 px-4 rounded-xl text-white shrink-0"
+            style={{ backgroundColor: '#C9547A' }}>
+            <Plus size={18} />
+          </Button>
+        </div>
+
+        {selectedServices.length === 0 && (
+          <p className="text-xs text-gray-400 text-center py-1">En az bir hizmet ekleyin</p>
         )}
       </div>
 
       {/* Ödeme */}
       <div className="bg-white rounded-2xl card-shadow p-4 space-y-3">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Ödeme</p>
-
         <div className="space-y-1.5">
           <Label className="text-sm">Ödeme Tipi</Label>
-          <Select value={paymentType} onValueChange={(v) => setPaymentType(v as PaymentType)}>
+          <Select value={paymentType} onValueChange={(v) => v && setPaymentType(v as PaymentType)}>
             <SelectTrigger className="rounded-xl border-gray-200 h-11"><SelectValue /></SelectTrigger>
             <SelectContent>
               {(Object.entries(PAYMENT_LABELS) as [PaymentType, string][]).map(([k, v]) => (
@@ -244,18 +361,11 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
             </SelectContent>
           </Select>
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-sm">Tutar (₺)</Label>
-            <Input type="number" value={price} onChange={e => setPrice(e.target.value)} className="rounded-xl border-gray-200 h-11" required />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-sm">İndirim (₺)</Label>
-            <Input type="number" value={discount} onChange={e => setDiscount(e.target.value)} className="rounded-xl border-gray-200 h-11" min="0" />
-          </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm">İndirim (₺)</Label>
+          <Input type="number" value={discount} onChange={e => setDiscount(e.target.value)}
+            className="rounded-xl border-gray-200 h-11" min="0" />
         </div>
-
         <div className="flex items-center justify-between bg-rose-50 rounded-xl px-4 py-3">
           <span className="text-sm font-semibold text-[#C9547A]">Net Tutar</span>
           <span className="text-xl font-bold text-[#C9547A]">₺{netAmount.toLocaleString('tr-TR')}</span>
@@ -265,7 +375,8 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
       {/* Not */}
       <div className="bg-white rounded-2xl card-shadow p-4 space-y-2">
         <Label className="text-sm">Not (isteğe bağlı)</Label>
-        <Input value={note} onChange={e => setNote(e.target.value)} placeholder="Özel istek veya not..." className="rounded-xl border-gray-200 h-11" />
+        <Input value={note} onChange={e => setNote(e.target.value)}
+          placeholder="Özel istek veya not..." className="rounded-xl border-gray-200 h-11" />
       </div>
 
       {error && <p className="text-red-500 text-sm px-1">{error}</p>}
@@ -273,8 +384,8 @@ export function AppointmentForm({ currentUserId, isAdmin, staffList, services, d
       <Button
         type="submit"
         className="w-full h-14 rounded-2xl text-white font-semibold text-base"
-        style={{ backgroundColor: conflictError ? '#9CA3AF' : '#C9547A' }}
-        disabled={loading || !!conflictError}
+        style={{ backgroundColor: (conflictError || selectedServices.length === 0) ? '#9CA3AF' : '#C9547A' }}
+        disabled={loading || !!conflictError || selectedServices.length === 0}
       >
         {loading ? 'Kaydediliyor...' : 'Randevu Oluştur'}
       </Button>
