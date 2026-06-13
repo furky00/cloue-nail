@@ -36,19 +36,24 @@ export async function GET(request: Request) {
   const now = new Date()
   let sent = 0
 
-  // ── 1. 2 saatlik hatırlatma ──────────────────────────────
-  const targetHour = (now.getHours() + 2) % 24
-  const targetDate = targetHour < now.getHours()
-    ? format(addDays(now, 1), 'yyyy-MM-dd')
-    : format(now, 'yyyy-MM-dd')
-  const targetTime = `${String(targetHour).padStart(2, '0')}:`
+  // ── 1. 2 saatlik hatırlatma (±7 dakika penceresi) ───────
+  const target = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+  const targetDate = format(target, 'yyyy-MM-dd')
+  const targetHH = String(target.getHours()).padStart(2, '0')
+  const targetMM = target.getMinutes()
+  // ±7 dakika penceresi: 15 dakikada bir çalışınca hiçbir randevu atlanmaz
+  const minMM = Math.max(0, targetMM - 7)
+  const maxMM = Math.min(59, targetMM + 7)
+  const minTime = `${targetHH}:${String(minMM).padStart(2, '0')}`
+  const maxTime = `${targetHH}:${String(maxMM).padStart(2, '0')}:59`
 
   const { data: upcoming } = await supabase
     .from('appointments')
     .select('*, customer:customers(name, phone), service:services(name), staff:users(name)')
     .eq('date', targetDate)
     .in('status', ['pending', 'confirmed'])
-    .like('time', `${targetTime}%`)
+    .gte('time', minTime)
+    .lte('time', maxTime)
     .is('deleted_at', null)
 
   for (const apt of upcoming ?? []) {
