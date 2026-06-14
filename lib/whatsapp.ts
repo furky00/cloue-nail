@@ -17,7 +17,7 @@ export async function sendWhatsApp(to: string, message: string) {
 
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`UltraMsg error: ${err}`)
+    throw new Error(`UltraMsg error [${res.status}] instance=${instanceId} token=${token?.slice(0,6)}...: ${err}`)
   }
 
   return res.json()
