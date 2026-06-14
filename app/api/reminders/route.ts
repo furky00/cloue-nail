@@ -59,7 +59,8 @@ export async function GET(request: Request) {
   for (const apt of upcoming ?? []) {
     if (apt.customer?.phone) {
       const firstName = apt.customer.name.split(' ')[0]
-      const msg = `Merhaba ${firstName} Hanım! 💅\nBugün saat ${apt.time?.slice(0, 5)}'de ${apt.staff?.name} ${staffTitle(apt.staff?.name)} ile Cloué Nail'deki ${apt.service?.name} randevunuz 2 saat sonra başlıyor.\nSizi bekliyoruz! 🌸`
+      const staffDisplay = apt.staff?.name ? `${apt.staff.name} ${staffTitle(apt.staff.name)}` : 'Ekibimiz'
+      const msg = `Merhaba ${firstName} Hanım! 💅\n\nOluşturmuş olduğunuz randevunuza 2 saat kaldı, sizi bekliyoruz!\n\n👤 Personel: ${staffDisplay}\n💅 Hizmet: ${apt.service?.name}\n🕐 Saat: ${apt.time?.slice(0, 5)}\n\n📍 Adres: Kavaklıdere, Esat Cd. Perçiner İş Merkezi D:22/8, 06640 Çankaya/Ankara\n🗺️ Konum: https://share.google/e7NzUcDsjfZkqNusa\n\nCloué Nail 🌸`
       await sendWhatsApp(apt.customer.phone, msg)
       await logMessage(supabase, { appointmentId: apt.id, customerId: apt.customer_id, phone: apt.customer.phone, messageType: 'reminder_2h', content: msg })
       sent++

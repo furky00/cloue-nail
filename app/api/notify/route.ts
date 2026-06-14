@@ -54,7 +54,8 @@ export async function POST(request: Request) {
         const miniLink = token ? `${appUrl}/randevum/${token}` : ''
 
         const firstName = customerName.split(' ')[0]
-        const msg = `Merhaba ${firstName} Hanım! 💅\n\nCloué Nail randevunuz oluşturuldu.\n\n👤 Personel: ${staffName} ${staffTitle(staffName)}\n💅 Hizmet: ${serviceName}\n📅 Tarih: ${formatDate(date)}\n🕐 Saat: ${time}${miniLink ? `\n\n🔗 Randevu detayları: ${miniLink}` : ''}\n\nSizi bekliyoruz! 🌸`
+        const staffDisplay = staffName ? `${staffName} ${staffTitle(staffName)}` : 'Ekibimiz'
+        const msg = `Merhaba ${firstName} Hanım! 💅\n\nCloué Nail'de randevunuz başarıyla oluşturuldu.\n\n👤 Personel: ${staffDisplay}\n💅 Hizmet: ${serviceName}\n📅 Tarih: ${formatDate(date)}\n🕐 Saat: ${time}\n\n📍 Adres: Kavaklıdere, Esat Cd. Perçiner İş Merkezi D:22/8, 06640 Çankaya/Ankara\n🗺️ Konum: https://share.google/e7NzUcDsjfZkqNusa\n\nSizi bekliyoruz! 🌸`
 
         await sendWhatsApp(customerPhone, msg)
         await logMessage(supabase, {
